@@ -321,7 +321,7 @@ class assign_submission_mahara extends assign_submission_plugin {
      * @param $viewownermoodleid ID of the view ower's Moodle user record
      * @return mixed
      */
-    public function mnet_submit_view($submission, $viewid, $iscollection, $viewownermoodleid = null) {
+    public function mnet_submit_view($submission, $viewid, $iscollection, $viewownermoodleid = null, $lock = true) {
         global $USER, $DB;
 
         // Verify that it's not already submitted to another Mahara assignment in this Moodle site.
@@ -347,7 +347,7 @@ class assign_submission_mahara extends assign_submission_plugin {
         else {
             $username = $DB->get_field('user', 'username', array('id'=>$viewownermoodleid));
         }
-        return $this->mnet_send_request('submit_view_for_assessment', array($username, $viewid, $iscollection));
+        return $this->mnet_send_request('submit_view_for_assessment', array($username, $viewid, $iscollection, $lock));
     }
 
     /**
@@ -515,7 +515,7 @@ class assign_submission_mahara extends assign_submission_plugin {
             }
 
             // Lock submission on mahara side.
-            if (!$response = $this->mnet_submit_view($submission, $data->viewid, $iscollection)) {
+            if (!$response = $this->mnet_submit_view($submission, $data->viewid, $iscollection, null, $this->get_config('lock'))) {
                 throw new moodle_exception('errormnetrequest', 'assignsubmission_mahara', '', $this->get_error());
             }
 
@@ -524,7 +524,13 @@ class assign_submission_mahara extends assign_submission_plugin {
             // TODO: Replace this hack with something more robust. It's an oversight and a security hole, that the
             // access code remains in place in Mahara when you release the page via XML-RPC.
             if (!$this->get_config('lock')) {
-                $this->mnet_release_submitted_view($data->viewid, array(), $iscollection);
+                // Check whether returned url has a token (tests whether new version of mahara in use
+                if (!(is_array($response) && isset($response['viewurl']) &&
+                      strlen($response['viewurl']) > 4 &&
+                      substr($response['viewurl'], strlen($response['viewurl']) - 4) === "?mt=")) {
+                    // Not using new version of mahara, which doesn't take the lock parameter on the submit function
+                    $this->mnet_release_submitted_view($data->viewid, array(), $iscollection);
+                }
                 $status = self::STATUS_RELEASED;
             } else {
                 $status = self::STATUS_SUBMITTED;
@@ -645,15 +651,21 @@ class assign_submission_mahara extends assign_submission_plugin {
 
         $maharasubmission = $this->get_mahara_submission($submission->id);
         // Lock view on Mahara side as it has been submitted for assessment.
-        if (!$response = $this->mnet_submit_view($submission, $maharasubmission->viewid, $maharasubmission->iscollection)) {
+        if (!$response = $this->mnet_submit_view($submission, $maharasubmission->viewid, $maharasubmission->iscollection, null, $this->get_config('lock'))) {
             throw new moodle_exception('errormnetrequest', 'assignsubmission_mahara', '', $this->get_error());
         }
         $maharasubmission->viewurl = $response['url'];
         $maharasubmission->viewstatus = self::STATUS_SUBMITTED;
 
         if (!$this->get_config('lock')) {
-            if ($this->mnet_release_submitted_view($maharasubmission->viewid, array(), $maharasubmission->iscollection) === false) {
-                throw new moodle_exception('errormnetrequest', 'assignsubmission_mahara', '', $this->get_error());
+            // Check whether returned url has a token (tests whether new version of mahara in use
+            if (!(is_array($response) && isset($response['viewurl']) &&
+                  strlen($response['viewurl']) > 4 &&
+                  substr($response['viewurl'], strlen($response['viewurl']) - 4) === "?mt=")) {
+                // Not using new version of mahara, which doesn't take the lock parameter on the submit function
+                if ($this->mnet_release_submitted_view($maharasubmission->viewid, array(), $maharasubmission->iscollection) === false) {
+                    throw new moodle_exception('errormnetrequest', 'assignsubmission_mahara', '', $this->get_error());
+                }
             }
             $maharasubmission->viewstatus = self::STATUS_RELEASED;
         }
@@ -768,8 +780,18 @@ class assign_submission_mahara extends assign_submission_plugin {
      * @param stdClass $maharasubmission assignsubmission_mahara record
      * @return stdClass $url Moodle URL object
      */
-    public function get_view_url($viewurl) {
+    public function get_view_url($submission) {
         global $DB;
+        if (is_string($submission)) {
+            $viewurl = $submission;
+        } else {
+            $viewurl = $submission->viewurl . '&assignment=' . $submission->assignment;
+            if ($submission->iscollection) {
+                $viewurl .= '&mnetcollid=' . $submission->viewid;
+            } else {
+                $viewurl .= '&mnetviewid=' . $submission->viewid;
+            }
+        }
         $remotehost = $DB->get_record('mnet_host', array('id'=>$this->get_config('mnethostid')));
         $url = new moodle_url('/auth/mnet/jump.php', array(
             'hostid' => $remotehost->id,
@@ -830,7 +852,7 @@ class assign_submission_mahara extends assign_submission_plugin {
             } else {
                 // Either the page is viewed by the author or access code has been issued
                 $remotehost = $DB->get_record('mnet_host', array('id'=>$this->get_config('mnethostid')));
-                $url = $this->get_view_url($maharasubmission->viewurl);
+                $url = $this->get_view_url($maharasubmission);
                 return $this->get_preview_url($maharasubmission->viewtitle, $url);
             }
         }

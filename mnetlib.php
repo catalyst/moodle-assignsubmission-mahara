@@ -26,6 +26,29 @@
  */
 
 class mnetservice_assign_submission_mahara {
+
     public function donothing() {
     }
+
+    public function can_view_view($viewid, $username, $assignment, $iscollection) {
+        global $DB;
+
+        $submissionid = $DB->get_field("assignsubmission_mahara",
+                                       "submission",
+                                        array("viewid"       => $viewid,
+                                              "assignment"   => $assignment,
+                                              "iscollection" => $iscollection));
+        if (!$submissionid) {
+            return false;
+        }
+
+        $userid = $DB->get_field("assign_submission", "userid", array("id" => $submissionid));
+
+        $context = context_module::instance($assignment);
+
+        $user = $DB->get_record("user", array("username" => $username));
+
+        return $user->id == $userid || has_any_capability(array('mod/assign:grade', 'mod/assign:viewgrades'), $context, $user);
+    }
+
 }

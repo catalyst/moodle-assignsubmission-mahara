@@ -31,6 +31,7 @@ $publishes = array(
         'filename'   => 'mnetlib.php',
         'methods'    => array(
             'donothing',
+            'can_view_view',
         ),
     ),
 );
