@@ -35,14 +35,15 @@ defined('MOODLE_INTERNAL') || die();
  */
 class assign_submission_mahara extends assign_submission_plugin {
 
-    // We've selected the page/collection, but we haven't locked it or issued a special access token
+    // We've selected the page/collection, but we haven't locked it
     const STATUS_SELECTED = 'selected';
 
-    // We've locked the page in Mahara and issued an access token
+    // We've locked the page in Mahara
+    // (And, if it's a non-upgraded Mahara, we've been issued an access token)
     const STATUS_SUBMITTED = 'submitted';
 
-    // We locked and then unlocked the page in Mahara, which means we probably still have a valid
-    // access token for it
+    // We've locked the page in Mahara, and subsequently unlocked it.
+    // (If we're dealing with a non-upgraded Mahara, the access token probably still exists)
     const STATUS_RELEASED = 'released';
 
     /**
@@ -231,7 +232,7 @@ class assign_submission_mahara extends assign_submission_plugin {
                     get_string('viewsby', 'assignsubmission_mahara', $views['displayname'])
                 );
                 foreach ($views['data'] as $view) {
-                    $viewurl = $this->get_view_url($view['url']);
+                    $viewurl = $this->mnetify_url($view['url']);
                     $anchor = $this->get_preview_url($view['title'], $viewurl, strip_tags($view['description']));
                     $mform->addElement('radio', 'viewid', '', $anchor, 'v' . $view['id']);
                 }
@@ -241,7 +242,7 @@ class assign_submission_mahara extends assign_submission_plugin {
                     get_string('collectionsby', 'assignsubmission_mahara', $views['displayname'])
                 );
                 foreach ($views['collections']['data'] as $coll) {
-                    $collurl = $this->get_view_url($coll['url']);
+                    $collurl = $this->mnetify_url($coll['url']);
                     $anchor = $this->get_preview_url($coll['name'], $collurl, strip_tags($coll['description']));
                     $mform->addElement('radio', 'viewid', '', $anchor, 'c' . $coll['id']);
                 }
@@ -519,19 +520,23 @@ class assign_submission_mahara extends assign_submission_plugin {
                 throw new moodle_exception('errormnetrequest', 'assignsubmission_mahara', '', $this->get_error());
             }
 
-            // If we're not locking user pages, then immediately release the page. This will leave it unlocked,
-            // but leave the access code in place.
-            // TODO: Replace this hack with something more robust. It's an oversight and a security hole, that the
-            // access code remains in place in Mahara when you release the page via XML-RPC.
+            // TODO: This is workaround code for interacting with older versions of Mahara that relied
+            // on secreturl tokens for access control. If we're interacting with one of those, then
+            // the response data will include a non-null 'accesskey' field even though we asked them not to
+            // lock the page. If that's the case, then we need to now immediately release the page.
+            //
+            // This will leave the page unlocked, but due to a bug in the original implementation,
+            // the access key will continue working until/unless the page is submitted to another
+            // Moodle assignment.
             if (!$this->get_config('lock')) {
                 // Check whether returned url has a token (tests whether new version of mahara in use
-                if (!(is_array($response) && isset($response['viewurl']) &&
-                      strlen($response['viewurl']) > 4 &&
-                      substr($response['viewurl'], strlen($response['viewurl']) - 4) === "?mt=")) {
-                    // Not using new version of mahara, which doesn't take the lock parameter on the submit function
+                if (is_array($response) && array_key_exists($response, 'accesskey') && $response['accesskey'] != false) {
                     $this->mnet_release_submitted_view($data->viewid, array(), $iscollection);
+                    $status = self::STATUS_RELEASED;
                 }
-                $status = self::STATUS_RELEASED;
+                else {
+                    $status = self::STATUS_SELECTED;
+                }
             } else {
                 $status = self::STATUS_SUBMITTED;
             }
@@ -658,16 +663,16 @@ class assign_submission_mahara extends assign_submission_plugin {
         $maharasubmission->viewstatus = self::STATUS_SUBMITTED;
 
         if (!$this->get_config('lock')) {
-            // Check whether returned url has a token (tests whether new version of mahara in use
-            if (!(is_array($response) && isset($response['viewurl']) &&
-                  strlen($response['viewurl']) > 4 &&
-                  substr($response['viewurl'], strlen($response['viewurl']) - 4) === "?mt=")) {
-                // Not using new version of mahara, which doesn't take the lock parameter on the submit function
+            // TODO: Workaround code for dealing with older versions of Mahara
+            if (is_array($response) && array_key_exists($response, 'accesskey') && $response['accesskey'] != false) {
                 if ($this->mnet_release_submitted_view($maharasubmission->viewid, array(), $maharasubmission->iscollection) === false) {
                     throw new moodle_exception('errormnetrequest', 'assignsubmission_mahara', '', $this->get_error());
                 }
+                $maharasubmission->viewstatus = self::STATUS_RELEASED;
             }
-            $maharasubmission->viewstatus = self::STATUS_RELEASED;
+            else {
+                $maharasubmission->viewstatus = self::STATUS_SELECTED;
+            }
         }
 
         $DB->update_record('assignsubmission_mahara', $maharasubmission);
@@ -775,29 +780,19 @@ class assign_submission_mahara extends assign_submission_plugin {
     }
 
     /**
-     * Get view URL
+     * Turn a URL into an Mnet roaming url that will do seamless SSO
      *
-     * @param stdClass $maharasubmission assignsubmission_mahara record
+     * @param $url
      * @return stdClass $url Moodle URL object
      */
-    public function get_view_url($submission) {
+    public function mnetify_url($url) {
         global $DB;
-        if (is_string($submission)) {
-            $viewurl = $submission;
-        } else {
-            $viewurl = $submission->viewurl . '&assignment=' . $submission->assignment;
-            if ($submission->iscollection) {
-                $viewurl .= '&mnetcollid=' . $submission->viewid;
-            } else {
-                $viewurl .= '&mnetviewid=' . $submission->viewid;
-            }
-        }
         $remotehost = $DB->get_record('mnet_host', array('id'=>$this->get_config('mnethostid')));
-        $url = new moodle_url('/auth/mnet/jump.php', array(
+        $mneturl = new moodle_url('/auth/mnet/jump.php', array(
             'hostid' => $remotehost->id,
-            'wantsurl' => $viewurl,
+            'wantsurl' => $url,
         ));
-        return $url;
+        return $mneturl;
     }
 
     /**
@@ -824,7 +819,7 @@ class assign_submission_mahara extends assign_submission_plugin {
     }
 
     /**
-     * Display the view of submission.
+     * Display the teacher's view of the submission.
      *
      * @global stdClass $DB
      * @global stdClass $USER
@@ -852,7 +847,16 @@ class assign_submission_mahara extends assign_submission_plugin {
             } else {
                 // Either the page is viewed by the author or access code has been issued
                 $remotehost = $DB->get_record('mnet_host', array('id'=>$this->get_config('mnethostid')));
-                $url = $this->get_view_url($maharasubmission);
+
+                // Generate the gradebook access URL
+                $teacherurl = $submission->viewurl . '&assignment=' . $submission->assignment;
+                if ($submission->iscollection) {
+                    $teacherurl .= '&mnetcollid=' . $submission->viewid;
+                } else {
+                    $teacherurl .= '&mnetviewid=' . $submission->viewid;
+                }
+
+                $url = $this->mnetify_url($teacherurl);
                 return $this->get_preview_url($maharasubmission->viewtitle, $url);
             }
         }
