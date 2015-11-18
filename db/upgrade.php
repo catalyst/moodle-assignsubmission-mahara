@@ -69,8 +69,8 @@ function xmldb_assignsubmission_mahara_upgrade($oldversion) {
                 $dbman->add_field($table, $field);
             }
 
-            $DB->execute("update {assignsubmission_mahara} set viewstatus='".assign_submission_mahara::STATUS_SELECTED."' where viewaccesskey is null");
-            $DB->execute("update {assignsubmission_mahara} set viewstatus='".assign_submission_mahara::STATUS_SUBMITTED."' where viewaccesskey is not null");
+            $DB->execute("update {assignsubmission_mahara} set viewstatus='".assign_submission_mahara::MAHARA_STATUS_NORMAL."' where viewaccesskey is null");
+            $DB->execute("update {assignsubmission_mahara} set viewstatus='".assign_submission_mahara::MAHARA_STATUS_LOCKED."' where viewaccesskey is not null");
 
             // Define field viewaccesskey to be dropped from assignsubmission_mahara.
             $table = new xmldb_table('assignsubmission_mahara');
@@ -140,7 +140,7 @@ function xmldb_assignsubmission_mahara_upgrade($oldversion) {
                 $todb->viewtitle = $page->title;
                 $todb->iscollection = 0;
                 $status = $submissiondata->status;
-                if ($status == assign_submission_mahara::STATUS_RELEASED || $status == assign_submission_mahara::STATUS_SELECTED || $status == assign_submission_mahara::STATUS_SUBMITTED) {
+                if ($status == assign_submission_mahara::MAHARA_STATUS_RELEASED || $status == assign_submission_mahara::MAHARA_STATUS_NORMAL || $status == assign_submission_mahara::MAHARA_STATUS_LOCKED) {
                     $todb->status = $status;
                 }
                 else {
