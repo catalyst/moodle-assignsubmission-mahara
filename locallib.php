@@ -531,7 +531,7 @@ class assign_submission_mahara extends assign_submission_plugin {
             // Moodle assignment.
             if (!$this->get_config('lock')) {
                 // Check whether returned url has a token (tests whether new version of mahara in use
-                if (is_array($response) && array_key_exists($response, 'accesskey') && $response['accesskey'] != false) {
+                if (is_array($response) && array_key_exists('accesskey', $response) && $response['accesskey'] != false) {
                     $this->mnet_release_submitted_view($data->viewid, array(), $iscollection);
                     $status = self::MAHARA_STATUS_RELEASED;
                 }
@@ -665,7 +665,7 @@ class assign_submission_mahara extends assign_submission_plugin {
 
         if (!$this->get_config('lock')) {
             // TODO: Workaround code for dealing with older versions of Mahara
-            if (is_array($response) && array_key_exists($response, 'accesskey') && $response['accesskey'] != false) {
+            if (is_array($response) && array_key_exists('accesskey', $response) && $response['accesskey'] != false) {
                 if ($this->mnet_release_submitted_view($maharasubmission->viewid, array(), $maharasubmission->iscollection) === false) {
                     throw new moodle_exception('errormnetrequest', 'assignsubmission_mahara', '', $this->get_error());
                 }
@@ -847,14 +847,14 @@ class assign_submission_mahara extends assign_submission_plugin {
                 $result .= get_string('previousattemptsnotvisible', 'assignsubmission_mahara');
             } else {
                 // Either the page is viewed by the author or access code has been issued
-                $remotehost = $DB->get_record('mnet_host', array('id'=>$this->get_config('mnethostid')));
+                $remotehost = $DB->get_field('mnet_host', 'wwwroot', array('id'=>$this->get_config('mnethostid')));
 
                 // Generate the gradebook access URL
-                $teacherurl = $submission->viewurl . '&assignment=' . $submission->assignment;
-                if ($submission->iscollection) {
-                    $teacherurl .= '&mnetcollid=' . $submission->viewid;
+                $teacherurl = $maharasubmission->viewurl . '&assignment=' . $maharasubmission->assignment;
+                if ($maharasubmission->iscollection) {
+                    $teacherurl .= '&mnetcollid=' . $maharasubmission->viewid;
                 } else {
-                    $teacherurl .= '&mnetviewid=' . $submission->viewid;
+                    $teacherurl .= '&mnetviewid=' . $maharasubmission->viewid;
                 }
 
                 $url = $this->mnetify_url($teacherurl);
