@@ -177,7 +177,7 @@ function xmldb_assignsubmission_mahara_upgrade($oldversion) {
             $pluginman = core_plugin_manager::instance();
             $uninstallurl = $pluginman->get_uninstall_url('assignfeedback_mahara', 'overview');
             $uninstall = html_writer::link($uninstallurl, 'uninstall');
-            echo html_writer::div("It seems you are using assignfeedback_mahara plugin. "
+            echo html_writer::div("It seems you are using the assignfeedback_mahara plugin. "
                     . "This plugin is no longer required for Mahara pages unlocking and conflicting "
                     . "with this upgrade. Please " . $uninstall . " assignfeedback_mahara "
                     . "plugin first, remove its installation directory, and then proceed "

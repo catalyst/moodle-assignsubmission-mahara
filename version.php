@@ -29,3 +29,8 @@ $plugin->requires  = 2014051200;
 $plugin->component = 'assignsubmission_mahara';
 $plugin->maturity  = MATURITY_STABLE;
 $plugin->release   = '1.2-mdl2.7+'; // Plugin version 1.2, for Moodle 2.7+
+
+// TODO: Will no longer be necessary if MDL-52172 is merged.
+$plugin->dependencies = array(
+        'local_mahara' => 2015021005
+);
